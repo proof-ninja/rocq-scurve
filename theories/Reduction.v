@@ -30,6 +30,8 @@ match x with
 | (s ,w, cx) | (s, e, cc) | (n, e, cc) | (n, w, cx) => Minus
 end.
 
+Definition scurve_to_direction (s : scurve) := map orn (proj1_sig s).
+
 Definition rotation_difference (ds: list Direction) : Z :=
   fold_right Z.add 0 (map (fun d =>
                              match d with
@@ -144,9 +146,6 @@ Proof.
   destruct IHReduceDir as [head_eq' last_eq'].
   split; [now rewrite head_eq, head_eq' | now rewrite last_eq, last_eq'].
 Qed.
-
-Definition Reduce (p p': list PrimitiveSegment): Prop :=
-  ReduceDir (map orn p) (map orn p').
 
 Definition rule_dec ds: {exists ds', Rule ds ds'} + {~ exists ds', Rule ds ds'}.
   refine (match ds with
