@@ -255,7 +255,8 @@ Proof.
   intros [|a l'] [|b sub'] [|c r'] Hl Hsub Hr Hsparse;
     try contradiction.
   simpl. intro Heq.
-  destruct (Hsparse [] a (l' ++ b :: sub' ++ c :: r') ltac:(reflexivity))
+  destruct (sparse_embedding_at _ [] a (l' ++ b :: sub' ++ c :: r')
+              Hsparse ltac:(reflexivity))
     as [_ Hrect].
   assert (HinR : In (last_segment (c :: r')) (c :: r')).
   { apply last_In. discriminate. }
@@ -269,9 +270,9 @@ Proof.
       apply in_or_app. right. exact HinR. }
   specialize (Hrect (last_segment (c :: r')) (init a) Hin).
   apply Hrect.
-  - rewrite <- Heq. now apply segment_in_rect_or_endpoints, onInit.
-  - change (in_segment_rect_or_endpoints a (init a)).
-    now apply segment_in_rect_or_endpoints, onInit.
+  - rewrite <- Heq. now apply segment_in_endpoint_triangle, onInit.
+  - change (in_segment_triangle a (init a)).
+    now apply segment_in_endpoint_triangle, onInit.
 Qed.
 
 (* 傾きを保存した再接続の始端延長線点を，移動前へ戻す。 *)
@@ -1279,8 +1280,49 @@ Proof.
              (Rlt_le _ _ Hy)).
 Qed.
 
+(* 非隣接出現の分類順序と旧三角形の分離を、新しい端点・向きを持つ
+   二つの三角形へ移す。長方形の軸方向分離は要求しない。 *)
+Lemma operated_triangles_separated_from_spec :
+  forall l sub r h i j s t s' t',
+    ClassificationSpec l sub r ->
+    ~ terminal_lid l sub r ->
+    ~ initial_lid l sub r ->
+    0 < h ->
+    nth_error (l ++ sub ++ r) i = Some s ->
+    nth_error (l ++ sub ++ r) j = Some t ->
+    (S i < j \/ S j < i)%nat ->
+    init s' = operate_point l sub r h (init s) ->
+    term s' = operate_point l sub r h (term s) ->
+    init t' = operate_point l sub r h (init t) ->
+    term t' = operate_point l sub r h (term t) ->
+    orn_seg s' = orn_seg s ->
+    orn_seg t' = orn_seg t ->
+    (forall p, in_segment_triangle t p -> ~ in_segment_triangle s p) ->
+    forall p, in_segment_triangle t' p -> ~ in_segment_triangle s' p.
+Admitted.
+
 (* 延長線点と同じ x の旧セグメント点が与える分類順序から，
    延長線点は移動後の端点長方形にも入らない。 *)
+(* 旧三角形の外点を、縦断面との分類順序に従って動かすと、
+   同じ primitive と移動後の端点で定まる三角形にも入らない。 *)
+Lemma shifted_crossing_avoids_endpoint_triangle :
+  forall h s s' q g gi gt,
+    0 < h ->
+    primitive_segment s' = primitive_segment s ->
+    init s' = shift h gi (init s) ->
+    term s' = shift h gt (term s) ->
+    ~ in_segment_triangle s q ->
+    (forall e,
+      onSegment s e ->
+      fst e = fst q ->
+      (snd q < snd e ->
+         region_at_or_above gi g /\ region_at_or_above gt g)
+      /\
+      (snd e < snd q ->
+         region_at_or_above g gi /\ region_at_or_above g gt)) ->
+    ~ in_segment_triangle s' (shift h g q).
+Admitted.
+
 Lemma shifted_crossing_avoids_endpoint_rect :
   forall h s s' q g gi gt,
     0 < h ->
@@ -1492,102 +1534,9 @@ Proof.
   apply closed_intervals_have_common_point; lra.
 Qed.
 
-(* 同じ x の sub 上の点より上を通る非隣接セグメントは、両端とも
-   bbox の下端以上にある。 *)
-Lemma above_sub_point_bounds_segment_endpoints :
-  forall l sub r s p q,
-    sparse_embedding (l ++ sub ++ r) ->
-    In s (nonadjacent_sides l r) ->
-    onSegment s p ->
-    onSegmentlist sub q ->
-    rx0 (rect_of [s]) <= fst q <= rx1 (rect_of [s]) ->
-    snd q < snd p ->
-    ry0 (bbox_of sub) <= snd (init s)
-    /\ ry0 (bbox_of sub) <= snd (term s).
-Proof.
-  intros l sub r s p q Hsparse Hs Hp Hq Hqx Hy.
-  unfold rect_of in Hqx; simpl in Hqx.
-  pose proof (bbox_of_bounds sub q Hq) as [Hqlo _].
-  pose proof (segment_in_rect_or_endpoints s p Hp) as Hpbox.
-  assert (Hpy : Rmin (snd (init s)) (snd (term s)) <= snd p
-                <= Rmax (snd (init s)) (snd (term s))).
-  { unfold in_segment_rect_or_endpoints, in_closed_rect in Hpbox.
-    change
-      ((Rmin (fst (init s)) (fst (term s)) <= fst p <=
-          Rmax (fst (init s)) (fst (term s))) /\
-       (Rmin (snd (init s)) (snd (term s)) <= snd p <=
-          Rmax (snd (init s)) (snd (term s)))) in Hpbox.
-    exact (proj2 Hpbox). }
-  assert (Havoid := sparse_nonadjacent_box_avoids_sub_points
-                       l sub r s q Hsparse Hs Hq).
-  split; apply Rnot_lt_le; intro Hend.
-  - apply Havoid.
-    unfold in_segment_rect_or_endpoints, in_closed_rect, rect_of; simpl.
-    split; [lra |].
-    destruct Hpy as [Hpy0 Hpy1].
-    split.
-    + eapply Rle_trans; [apply Rmin_l |].
-      eapply Rle_trans; [apply Rlt_le; exact Hend | exact Hqlo].
-    + eapply Rle_trans; [apply Rlt_le; exact Hy | exact Hpy1].
-  - apply Havoid.
-    unfold in_segment_rect_or_endpoints, in_closed_rect, rect_of; simpl.
-    split; [lra |].
-    destruct Hpy as [Hpy0 Hpy1].
-    split.
-    + eapply Rle_trans; [apply Rmin_r |].
-      eapply Rle_trans; [apply Rlt_le; exact Hend | exact Hqlo].
-    + eapply Rle_trans; [apply Rlt_le; exact Hy | exact Hpy1].
-Qed.
-
-(* 下側の場合の双対。両端とも bbox の上端以下にある。 *)
-Lemma below_sub_point_bounds_segment_endpoints :
-  forall l sub r s p q,
-    sparse_embedding (l ++ sub ++ r) ->
-    In s (nonadjacent_sides l r) ->
-    onSegment s p ->
-    onSegmentlist sub q ->
-    rx0 (rect_of [s]) <= fst q <= rx1 (rect_of [s]) ->
-    snd p < snd q ->
-    snd (init s) <= ry1 (bbox_of sub)
-    /\ snd (term s) <= ry1 (bbox_of sub).
-Proof.
-  intros l sub r s p q Hsparse Hs Hp Hq Hqx Hy.
-  unfold rect_of in Hqx; simpl in Hqx.
-  pose proof (bbox_of_bounds sub q Hq) as [_ Hqhi].
-  pose proof (segment_in_rect_or_endpoints s p Hp) as Hpbox.
-  assert (Hpy : Rmin (snd (init s)) (snd (term s)) <= snd p
-                <= Rmax (snd (init s)) (snd (term s))).
-  { unfold in_segment_rect_or_endpoints, in_closed_rect in Hpbox.
-    change
-      ((Rmin (fst (init s)) (fst (term s)) <= fst p <=
-          Rmax (fst (init s)) (fst (term s))) /\
-       (Rmin (snd (init s)) (snd (term s)) <= snd p <=
-          Rmax (snd (init s)) (snd (term s)))) in Hpbox.
-    exact (proj2 Hpbox). }
-  assert (Havoid := sparse_nonadjacent_box_avoids_sub_points
-                       l sub r s q Hsparse Hs Hq).
-  split; apply Rnot_lt_le; intro Hend.
-  - apply Havoid.
-    unfold in_segment_rect_or_endpoints, in_closed_rect, rect_of; simpl.
-    split; [lra |].
-    destruct Hpy as [Hpy0 Hpy1].
-    split.
-    + eapply Rle_trans; [exact Hpy0 | apply Rlt_le; exact Hy].
-    + eapply Rle_trans; [exact Hqhi |].
-      eapply Rle_trans; [apply Rlt_le; exact Hend | apply Rmax_l].
-  - apply Havoid.
-    unfold in_segment_rect_or_endpoints, in_closed_rect, rect_of; simpl.
-    split; [lra |].
-    destruct Hpy as [Hpy0 Hpy1].
-    split.
-    + eapply Rle_trans; [exact Hpy0 | apply Rlt_le; exact Hy].
-    + eapply Rle_trans; [exact Hqhi |].
-      eapply Rle_trans; [apply Rlt_le; exact Hend | apply Rmax_r].
-Qed.
-
-(* x 範囲内の端点には classified_*_bbox を使う。範囲外の端点を
-   含む場合は、端点長方形が sub を横切れば sparse に反する。 *)
-Lemma operated_nonadjacent_endpoints_separated_from_spec :
+(* 非隣接セグメントの端点を移動して再接続すると、その閉三角形が
+   固定した sub の閉長方形を避ける。端点長方形全体の分離は要求しない。 *)
+Lemma reconnect_nonadjacent_triangle_avoids_sub_rect_from_spec :
   forall l sub r h s,
     sub <> [] ->
     connected sub ->
@@ -1595,68 +1544,11 @@ Lemma operated_nonadjacent_endpoints_separated_from_spec :
     sparse_embedding (l ++ sub ++ r) ->
     ClassificationSpec l sub r ->
     In s (nonadjacent_sides l r) ->
-    endpoint_box_separated_from_sub sub
-      (operate_point l sub r h (init s))
-      (operate_point l sub r h (term s)).
-Proof.
-  intros l sub r h s Hne Hconn Hh Hsparse Hspec Hs.
-  destruct (classic (both_left_of_sub sub (init s) (term s)))
-    as [Hleft | Hleft].
-  - right; right; left. unfold both_left_of_sub in *.
-    now rewrite !operate_point_fst.
-  - destruct (classic (both_right_of_sub sub (init s) (term s)))
-      as [Hright | Hright].
-    + right; right; right. unfold both_right_of_sub in *.
-      now rewrite !operate_point_fst.
-    + destruct (nonhorizontal_sides_have_common_x
-                  sub s Hleft Hright)
-        as [x [Hsubx Hsegx]].
-      destruct (segment_has_point_at_x s x ltac:(lra))
-        as [p [Hp Hpx]].
-      destruct (connected_sub_has_point_at_x sub x Hne Hconn ltac:(lra))
-        as [q [Hq Hqx]].
-      assert (Hprange : in_sub_x_range sub p).
-      { unfold in_sub_x_range. rewrite Hpx. lra. }
-      assert (Hsamex : fst p = fst q) by lra.
-      assert (Hpneq : p <> q).
-      { intro Heq. subst q.
-        apply (sparse_nonadjacent_box_avoids_sub_points
-                 l sub r s p Hsparse Hs Hq).
-        now apply segment_in_rect_or_endpoints. }
-      pose proof (classified_segment_at_sub_x
-                    l sub r
-                    Hspec
-                    s p Hs Hp Hprange) as [Hup Hdown].
-      assert (Hy : snd q < snd p \/ snd p < snd q).
-      { destruct (total_order_T (snd q) (snd p))
-          as [[Hlt | Heq] | Hgt].
-        - now left.
-        - exfalso. apply Hpneq.
-          destruct p as [xp yp], q as [xq yq].
-          simpl in Hsamex, Heq |- *. f_equal; lra.
-        - now right. }
-      assert (Hqsegx :
-          rx0 (rect_of [s]) <= fst q <= rx1 (rect_of [s])) by lra.
-      destruct Hy as [Hy | Hy].
-      * assert (Habove : above_sub_at_x sub p).
-        { exists q. repeat split; assumption. }
-        destruct (Hup Habove) as [Hinit Hterm].
-        pose proof (above_sub_point_bounds_segment_endpoints
-                      l sub r s p q Hsparse Hs Hp Hq Hqsegx Hy)
-          as [HinitY HtermY].
-        left. unfold both_above_of_sub, operate_point, shift.
-        rewrite Hinit, Hterm. simpl.
-        unfold h_large, rect_height in Hh. lra.
-      * assert (Hbelow : below_sub_at_x sub p).
-        { exists q. repeat split; assumption. }
-        destruct (Hdown Hbelow) as [Hinit Hterm].
-        pose proof (below_sub_point_bounds_segment_endpoints
-                      l sub r s p q Hsparse Hs Hp Hq Hqsegx Hy)
-          as [HinitY HtermY].
-        right; left. unfold both_below_of_sub, operate_point, shift.
-        rewrite Hinit, Hterm. simpl.
-        unfold h_large, rect_height in Hh. lra.
-Qed.
+    forall p,
+      in_segment_triangle (reconnect_one l sub r h s) p ->
+      ~ in_rect_or_endpoints_at sub p.
+(* 三角形 sparse からの局所幾何の証明を残す。 *)
+Admitted.
 
 Lemma in_rect_or_endpoints_at_closed_bounds :
   forall old p,
